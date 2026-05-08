@@ -1,8 +1,7 @@
 #[cfg(windows)]
 use std::path::Path;
 use std::{
-    env,
-    fs,
+    env, fs,
     io::{self, Write},
     path::PathBuf,
 };
@@ -91,28 +90,28 @@ impl Command {
 
         let args: Vec<String> = parts.map(|part| part.to_string()).collect();
 
-        match first_word {
-            "exit" => Ok(Self::Builtin(BuiltinCommand::Exit)),
-            "echo" => Ok(Self::Builtin(BuiltinCommand::Echo(args.join(" ")))),
-            "type" => Ok(Self::Builtin(BuiltinCommand::Type(
-                args.get(0).cloned().unwrap_or_default(),
-            ))),
-            _ => {
-                // If it's not a builtin, treat it as an external command
-                Ok(Self::External(first_word.to_string(), args))
-            }
+        if let Some(builtin) = BuiltinCommand::parse(first_word, &args) {
+            Ok(Self::Builtin(builtin))
+        } else {
+            Ok(Self::External(first_word.to_string(), args))
         }
     }
 }
 
 impl BuiltinCommand {
-    fn as_str(&self) -> &str {
-        match self {
-            BuiltinCommand::Exit => "exit",
-            BuiltinCommand::Echo(_) => "echo",
-            BuiltinCommand::Type(_) => "type",
+    fn is_builtin(name: &str) -> bool {
+        matches!(name, "exit" | "echo" | "type")
+    }
+
+    fn parse(name: &str, args: &[String]) -> Option<Self> {
+        match name {
+            "exit" => Some(Self::Exit),
+            "echo" => Some(Self::Echo(args.join(" "))),
+            "type" => Some(Self::Type(args.first().cloned().unwrap_or_default())),
+            _ => None,
         }
     }
+
     fn execute(&self) -> State {
         match self {
             BuiltinCommand::Exit => State::Stop,
@@ -121,17 +120,12 @@ impl BuiltinCommand {
                 State::Continue
             }
             BuiltinCommand::Type(cmd) => {
-                match cmd.as_str() {
-                    "echo" | "exit" | "type" => {
-                        println!("{} is a shell builtin", cmd);
-                    }
-                    _ => {
-                        if let Some(path) = find_in_path(cmd) {
-                            println!("{} is {}", cmd, path.display());
-                        } else {
-                            println!("{}: not found", cmd);
-                        }
-                    }
+                if Self::is_builtin(cmd) {
+                    println!("{} is a shell builtin", cmd);
+                } else if let Some(path) = find_in_path(cmd) {
+                    println!("{} is {}", cmd, path.display());
+                } else {
+                    println!("{}: not found", cmd);
                 }
                 State::Continue
             }
