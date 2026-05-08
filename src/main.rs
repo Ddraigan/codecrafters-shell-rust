@@ -50,8 +50,12 @@ impl BuiltinCommand {
                 println!("{}", args);
                 State::Continue
             }
-            BuiltinCommand::Type(_cmd) => {
-                println!("{} is a shell builtin", _cmd);
+            BuiltinCommand::Type(cmd) => {
+                if matches!(cmd.as_str(), "echo" | "exit" | "type") {
+                    println!("{} is a shell builtin", cmd);
+                } else {
+                    println!("{}: not found", cmd)
+                }
                 State::Continue
             }
             BuiltinCommand::NoOp => State::Continue,
