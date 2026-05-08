@@ -7,7 +7,7 @@ use std::{
 };
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 
 fn main() {
     let mut shell = Shell::default();
@@ -63,10 +63,17 @@ impl Command {
             Command::External(cmd, args) => {
                 match find_in_path(cmd) {
                     Some(path) => {
-                        let status = std::process::Command::new(path)
-                            .args(args)
-                            .spawn()
-                            .and_then(|mut child| child.wait());
+                        let mut child = std::process::Command::new(path);
+                        child.args(args);
+
+                        #[cfg(unix)]
+                        {
+                            // Explicitly set argv[0] to the command name ('custom_exe_4021')
+                            // rather than the resolved path ('/tmp/rat/custom_exe_4021')
+                            child.arg0(&cmd);
+                        }
+
+                        let status = child.spawn().and_then(|mut child| child.wait());
 
                         if let Err(err) = status {
                             eprintln!("Error executing {}: {}", cmd, err);
