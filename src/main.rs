@@ -147,9 +147,18 @@ impl BuiltinCommand {
                 State::Continue
             }
             BuiltinCommand::ChangeDirectory(arg) => {
-                let new_dir = Path::new(arg);
-                env::set_current_dir(new_dir)
-                    .unwrap_or_else(|_| eprintln!("cd: {}: No such file or directory", arg));
+                let target = if arg == "~" {
+                    env::var("HOME").or_else(|_| env::var("USERPROFILE")).ok()
+                } else {
+                    Some(arg.to_string())
+                };
+                if let Some(path_str) = target {
+                    env::set_current_dir(Path::new(&path_str))
+                        .unwrap_or_else(|_| eprintln!("cd: {}: No such file or directory", arg));
+                } else {
+                    eprintln!("cd: {}: Could not determine home directory", arg);
+                }
+
                 State::Continue
             }
         }
