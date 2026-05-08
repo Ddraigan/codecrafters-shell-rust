@@ -1,4 +1,3 @@
-#[cfg(windows)]
 use std::path::Path;
 use std::{
     env, fs,
