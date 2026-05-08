@@ -55,6 +55,7 @@ enum BuiltinCommand {
     Echo(String),
     Type(String),
     Pwd,
+    ChangeDirectory(String),
 }
 
 impl Command {
@@ -106,7 +107,7 @@ impl Command {
 
 impl BuiltinCommand {
     fn is_builtin(name: &str) -> bool {
-        matches!(name, "exit" | "echo" | "type" | "pwd")
+        matches!(name, "exit" | "echo" | "type" | "pwd" | "cd")
     }
 
     fn parse(name: &str, args: &[String]) -> Option<Self> {
@@ -115,6 +116,9 @@ impl BuiltinCommand {
             "echo" => Some(Self::Echo(args.join(" "))),
             "type" => Some(Self::Type(args.first().cloned().unwrap_or_default())),
             "pwd" => Some(Self::Pwd),
+            "cd" => Some(Self::ChangeDirectory(
+                args.first().cloned().unwrap_or_default(),
+            )),
             _ => None,
         }
     }
@@ -141,6 +145,12 @@ impl BuiltinCommand {
                     Ok(dir) => println!("{}", dir.display()),
                     Err(err) => eprintln!("{}", err),
                 };
+                State::Continue
+            }
+            BuiltinCommand::ChangeDirectory(arg) => {
+                let new_dir = Path::new(arg);
+                env::set_current_dir(new_dir)
+                    .unwrap_or_else(|_| eprintln!("cd: {}: No such file or directory", arg));
                 State::Continue
             }
         }
