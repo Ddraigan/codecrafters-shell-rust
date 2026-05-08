@@ -1,4 +1,8 @@
-use std::io::{self, Write};
+use std::{
+    env,
+    io::{self, Write},
+    path::PathBuf,
+};
 
 fn main() {
     let mut shell = Shell::default();
@@ -12,7 +16,7 @@ fn main() {
         let mut input = String::default();
         io::stdin().read_line(&mut input).unwrap();
 
-        match BuiltinCommand::parse(&input) {
+        match Command::parse(&input) {
             Ok(cmd) => {
                 shell.state = cmd.execute();
             }
@@ -30,19 +34,79 @@ enum State {
     Stop,
 }
 
-enum BuiltinCommand {
-    Exit,
-    Echo(String),
-    Type(String),
-    NoOp,
-}
-
 #[derive(Default)]
 struct Shell {
     state: State,
 }
 
+enum Command {
+    Builtin(BuiltinCommand),
+    External(String, Vec<String>),
+    NoOp,
+}
+
+enum BuiltinCommand {
+    Exit,
+    Echo(String),
+    Type(String),
+}
+
+impl Command {
+    fn execute(&self) -> State {
+        match self {
+            Command::Builtin(builtin_command) => builtin_command.execute(),
+            Command::External(cmd, args) => {
+                match find_in_path(cmd) {
+                    Some(path) => {
+                        let status = std::process::Command::new(path)
+                            .args(args)
+                            .spawn()
+                            .and_then(|mut child| child.wait());
+
+                        if let Err(err) = status {
+                            eprintln!("Error executing {}: {}", cmd, err);
+                        }
+                    }
+                    None => println!("{}: command not found", cmd),
+                }
+                State::Continue
+            }
+            Command::NoOp => State::Continue,
+        }
+    }
+
+    fn parse(input: &str) -> anyhow::Result<Self> {
+        let mut parts = input.trim().split_ascii_whitespace();
+
+        let first_word = match parts.next() {
+            Some(word) => word,
+            None => return Ok(Self::NoOp),
+        };
+
+        let args: Vec<String> = parts.map(|part| part.to_string()).collect();
+
+        match first_word {
+            "exit" => Ok(Self::Builtin(BuiltinCommand::Exit)),
+            "echo" => Ok(Self::Builtin(BuiltinCommand::Echo(args.join(" ")))),
+            "type" => Ok(Self::Builtin(BuiltinCommand::Type(
+                args.get(0).cloned().unwrap_or_default(),
+            ))),
+            _ => {
+                // If it's not a builtin, treat it as an external command
+                Ok(Self::External(first_word.to_string(), args))
+            }
+        }
+    }
+}
+
 impl BuiltinCommand {
+    fn as_str(&self) -> &str {
+        match self {
+            BuiltinCommand::Exit => "exit",
+            BuiltinCommand::Echo(_) => "echo",
+            BuiltinCommand::Type(_) => "type",
+        }
+    }
     fn execute(&self) -> State {
         match self {
             BuiltinCommand::Exit => State::Stop,
@@ -51,36 +115,32 @@ impl BuiltinCommand {
                 State::Continue
             }
             BuiltinCommand::Type(cmd) => {
-                if matches!(cmd.as_str(), "echo" | "exit" | "type") {
-                    println!("{} is a shell builtin", cmd);
-                } else {
-                    println!("{}: not found", cmd)
+                match cmd.as_str() {
+                    "echo" | "exit" | "type" => {
+                        println!("{} is a shell builtin", cmd);
+                    }
+                    _ => {
+                        if let Some(path) = find_in_path(cmd) {
+                            println!("{} is {}", cmd, path.display());
+                        } else {
+                            println!("{}: not found", cmd);
+                        }
+                    }
                 }
                 State::Continue
             }
-            BuiltinCommand::NoOp => State::Continue,
         }
     }
+}
 
-    fn parse(command: &str) -> anyhow::Result<BuiltinCommand> {
-        let mut parts = command.trim().split_ascii_whitespace();
-
-        let first_word = match parts.next() {
-            Some(word) => word,
-            None => return Ok(Self::NoOp),
-        };
-
-        match first_word {
-            "exit" => Ok(Self::Exit),
-            "echo" => {
-                let remainder: Vec<&str> = parts.collect();
-                Ok(Self::Echo(remainder.join(" ")))
+fn find_in_path(cmd: &str) -> Option<PathBuf> {
+    if let Ok(path_var) = env::var("PATH") {
+        for path in env::split_paths(&path_var) {
+            let full_path = path.join(cmd);
+            if full_path.is_file() {
+                return Some(full_path);
             }
-            "type" => {
-                let arg = parts.next().unwrap_or_default();
-                Ok(Self::Type(arg.to_string()))
-            }
-            _ => Err(anyhow::anyhow!("{}: command not found", first_word)),
         }
     }
+    None
 }
