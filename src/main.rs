@@ -54,6 +54,7 @@ enum BuiltinCommand {
     Exit,
     Echo(String),
     Type(String),
+    Pwd,
 }
 
 impl Command {
@@ -68,8 +69,6 @@ impl Command {
 
                         #[cfg(unix)]
                         {
-                            // Explicitly set argv[0] to the command name ('custom_exe_4021')
-                            // rather than the resolved path ('/tmp/rat/custom_exe_4021')
                             child.arg0(&cmd);
                         }
 
@@ -107,7 +106,7 @@ impl Command {
 
 impl BuiltinCommand {
     fn is_builtin(name: &str) -> bool {
-        matches!(name, "exit" | "echo" | "type")
+        matches!(name, "exit" | "echo" | "type" | "pwd")
     }
 
     fn parse(name: &str, args: &[String]) -> Option<Self> {
@@ -115,6 +114,7 @@ impl BuiltinCommand {
             "exit" => Some(Self::Exit),
             "echo" => Some(Self::Echo(args.join(" "))),
             "type" => Some(Self::Type(args.first().cloned().unwrap_or_default())),
+            "pwd" => Some(Self::Pwd),
             _ => None,
         }
     }
@@ -134,6 +134,13 @@ impl BuiltinCommand {
                 } else {
                     println!("{}: not found", cmd);
                 }
+                State::Continue
+            }
+            BuiltinCommand::Pwd => {
+                match env::current_dir() {
+                    Ok(dir) => println!("{}", dir.display()),
+                    Err(err) => eprintln!("{}", err),
+                };
                 State::Continue
             }
         }
