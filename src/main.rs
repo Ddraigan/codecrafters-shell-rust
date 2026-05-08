@@ -1,8 +1,13 @@
+#[cfg(windows)]
+use std::path::Path;
 use std::{
     env,
     io::{self, Write},
     path::PathBuf,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 fn main() {
     let mut shell = Shell::default();
@@ -134,11 +139,51 @@ impl BuiltinCommand {
 }
 
 fn find_in_path(cmd: &str) -> Option<PathBuf> {
-    if let Ok(path_var) = env::var("PATH") {
-        for path in env::split_paths(&path_var) {
-            let full_path = path.join(cmd);
-            if full_path.is_file() {
+    let path_var = env::var("PATH").ok()?;
+    let paths = env::split_paths(&path_var);
+
+    for path in paths {
+        let full_path = path.join(cmd);
+
+        #[cfg(unix)]
+        {
+            if is_executable_unix(&full_path) {
                 return Some(full_path);
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            if let Some(p) = find_executable_windows(&full_path) {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(unix)]
+fn is_executable_unix(path: &PathBuf) -> bool {
+    fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn find_executable_windows(path: &Path) -> Option<PathBuf> {
+    if path.is_file() {
+        return Some(path.to_path_buf());
+    }
+
+    let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.BAT;.CMD".to_string());
+
+    for ext in env::split_paths(&pathext) {
+        if let Some(ext_str) = ext.to_str() {
+            let mut with_ext = path.to_path_buf();
+            with_ext.set_extension(ext_str.trim_start_matches('.'));
+
+            if with_ext.is_file() {
+                return Some(with_ext);
             }
         }
     }
