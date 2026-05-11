@@ -11,7 +11,7 @@ use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 fn main() {
     let mut shell = Shell::default();
 
-    while shell.state == State::Continue {
+    while shell.state != State::Stop {
         // Print Prompt
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -19,8 +19,9 @@ fn main() {
         // Read Input
         let mut input = String::default();
         io::stdin().read_line(&mut input).unwrap();
+        let tokens = tokenise(&input);
 
-        match Command::parse(&input) {
+        match Command::parse(tokens) {
             Ok(cmd) => {
                 shell.state = cmd.execute();
             }
@@ -29,6 +30,32 @@ fn main() {
             }
         }
     }
+}
+
+fn tokenise(input: &str) -> Vec<String> {
+    let mut results = vec![];
+    let mut current = String::new();
+    let mut inside_single_quotes = false;
+
+    for ch in input.trim().chars() {
+        match ch {
+            '\'' => {
+                inside_single_quotes = !inside_single_quotes;
+            },
+            ' ' if !inside_single_quotes => {
+                if !current.is_empty() {
+                    results.push(current.drain(..).collect());
+                }
+            },
+            _ => current.push(ch),
+        }
+    }
+    
+    if !current.is_empty() {
+        results.push(current);
+    }
+
+    results
 }
 
 #[derive(PartialEq, Default)]
@@ -86,17 +113,17 @@ impl Command {
         }
     }
 
-    fn parse(input: &str) -> anyhow::Result<Self> {
-        let mut parts = input.trim().split_ascii_whitespace();
+    fn parse(tokens: Vec<String>) -> anyhow::Result<Self> {
+        let mut tokens = tokens.into_iter();
 
-        let first_word = match parts.next() {
+        let first_word = match tokens.next() {
             Some(word) => word,
             None => return Ok(Self::NoOp),
         };
 
-        let args: Vec<String> = parts.map(|part| part.to_string()).collect();
+        let args: Vec<String> = tokens.collect();
 
-        if let Some(builtin) = BuiltinCommand::parse(first_word, &args) {
+        if let Some(builtin) = BuiltinCommand::parse(&first_word, &args) {
             Ok(Self::Builtin(builtin))
         } else {
             Ok(Self::External(first_word.to_string(), args))
